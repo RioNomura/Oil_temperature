@@ -1,38 +1,57 @@
 # Oil_temperature
 
 【実行方法】
+
 1.SARIMAX.py, check.py, train1.py, ett.csvを同じファイル内にディレクトリに配置します。
 
-
 2.check.pyを実行することで基本統計量と、"月別平均油温グラフ.png"と"油温の時系列グラフ.png"の結果が得られます。
+
 3.train1.pyを実行することで"特徴量上位5.png"の結果が得られます。
+
 4.SARIMAX.pyを実行することで"SARIMAX.png"のSARIMAX部の結果が得られます。(ただし、約15分前後の実行時間がかかる)
 
+
 ※train1.pyの29,30行目の
+
 df[f'{col}_lag6'] = df[col].shift(6)　
+
 df[f'{col}_lag12'] = df[col].shift(12)
 
+
 と、47~61行目
+
 #Random Forestを使用して特徴量の重要度を計算
+
 rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+
 rf_model.fit(X_selected, y)
 
 #特徴量の重要度を取得
+
 importances = rf_model.feature_importances_
+
 feature_importances = pd.DataFrame({'feature': X_selected.columns, 'importance': importances})
+
 feature_importances = feature_importances.sort_values('importance', ascending=False)
 
 #上位n個の特徴量を選択
+
 n = 5  # 選択したい特徴量の数
+
 top_features = feature_importances['feature'][:n].tolist()
 
 #選択された特徴量のみを使用
+
 X_selected = X_selected[top_features]
 
 また、152~154行目の
+
 #選択された特徴量を表示
+
 print("特徴量一覧:")
+
 print(top_features)
+
 
 を削除することで"全特徴量.png"の結果が得られます。
 
