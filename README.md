@@ -11,24 +11,24 @@ df[f'{col}_lag6'] = df[col].shift(6)　
 df[f'{col}_lag12'] = df[col].shift(12)
 
 と、47~61行目
-# Random Forestを使用して特徴量の重要度を計算
+#Random Forestを使用して特徴量の重要度を計算
 rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
 rf_model.fit(X_selected, y)
 
-# 特徴量の重要度を取得
+#特徴量の重要度を取得
 importances = rf_model.feature_importances_
 feature_importances = pd.DataFrame({'feature': X_selected.columns, 'importance': importances})
 feature_importances = feature_importances.sort_values('importance', ascending=False)
 
-# 上位n個の特徴量を選択
+#上位n個の特徴量を選択
 n = 5  # 選択したい特徴量の数
 top_features = feature_importances['feature'][:n].tolist()
 
-# 選択された特徴量のみを使用
+#選択された特徴量のみを使用
 X_selected = X_selected[top_features]
 
 また、152~154行目の
-# 選択された特徴量を表示
+#選択された特徴量を表示
 print("特徴量一覧:")
 print(top_features)
 
@@ -37,7 +37,7 @@ print(top_features)
 ーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーーー
 
 【プログラム概要】
-🔸check.py🔸
+# check.py
 このプログラムは、油温（OT）に関する時系列データの基本的な解析を行うことを目的としています。具体的には、以下の手順でデータを分析しています。
 
 【データの読み込みと前処理】
@@ -52,7 +52,7 @@ print(top_features)
 
 このプログラムにより、油温データの全体的な傾向を視覚的に把握でき、特定の異常値についても識別することが可能です。
 
-🔸train1.py🔸
+# train1.py
 このプログラムは、油温（OT）の時系列データを基に、複数の機械学習モデルを使用して予測を行い、モデルの性能を比較するために設計されています。プログラムは以下のステップで構成されています。
 
 【データの読み込みと前処理】
@@ -74,7 +74,7 @@ SelectKBestを使用して、最も予測性能が高い30個の特徴量を選�
 
 このプログラムにより、複数の機械学習モデルを比較し、最も優れたモデルを選択するための情報を提供します。
 
-🔸SARIMAX.py🔸
+# SARIMAX.py
 ※実行時にかなり時間がかかるため、SARIMAXモデルのみ別のファイルで作成しています。
 このプログラムは、SARIMAXモデルを使用して油温（OT）の時系列予測を行い、モデルの性能を評価するために設計されています。プログラムは以下のステップで構成されています。
 
