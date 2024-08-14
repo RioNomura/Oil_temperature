@@ -1,15 +1,12 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.feature_selection import SelectKBest, f_regression
-from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
 
 # データの読み込みと前処理
 df = pd.read_csv('AI-Engineer/multivariate-time-series-prediction/ett.csv', parse_dates=['date'])
@@ -26,7 +23,6 @@ df['weekday'] = df.index.dayofweek
 # ラグ特徴量の追加
 for col in ['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'OT']:
     df[f'{col}_lag1'] = df[col].shift(1)
-    df[f'{col}_lag6'] = df[col].shift(6)
     df[f'{col}_lag12'] = df[col].shift(12)
     df[f'{col}_lag24'] = df[col].shift(24)
 
@@ -34,138 +30,82 @@ df = df.dropna()
 
 # スケーリング
 scaler = StandardScaler()
-df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
 
 # データの分割
-X = df_scaled.drop('OT', axis=1)
-y = df_scaled['OT']
+X = df.drop('OT', axis=1)
+y = df['OT']
 
-# 特徴量選択（初期段階）
-selector = SelectKBest(score_func=f_regression, k=30)
-X_selected = pd.DataFrame(selector.fit_transform(X, y), columns=X.columns[selector.get_support()], index=X.index)
-
-# Random Forestを使用して特徴量の重要度を計算
-rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-rf_model.fit(X_selected, y)
-
-# 特徴量の重要度を取得
-importances = rf_model.feature_importances_
-feature_importances = pd.DataFrame({'feature': X_selected.columns, 'importance': importances})
-feature_importances = feature_importances.sort_values('importance', ascending=False)
-
-# 上位n個の特徴量を選択
-n = 5  # 選択したい特徴量の数
-top_features = feature_importances['feature'][:n].tolist()
-
-# 選択された特徴量のみを使用
-X_selected = X_selected[top_features]
-
-# 時系列交差検証
+# 時系列分割
 tscv = TimeSeriesSplit(n_splits=5)
 
-# モデルのリスト
-models = {
-    'Linear Regression': LinearRegression(),
-    'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42),
-    'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, random_state=42),
-    'XGBoost': XGBRegressor(n_estimators=100, random_state=42),
-    'LightGBM': LGBMRegressor(n_estimators=100, random_state=42),
-}
+# SARIMAXモデルの設定
+sarimax_order = (1, 0, 1)  # p, d, qの順を単純化
+sarimax_seasonal_order = (1, 1, 0, 12)  # P, D, Q, sの順を再設定
 
-# 評価指標の計算
-def calculate_metrics(y_true, y_pred):
-    return {
-        'R-squared': r2_score(y_true, y_pred),
-        'MSE': mean_squared_error(y_true, y_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
-        'MAE': mean_absolute_error(y_true, y_pred)
-    }
+train_scores = []
+test_scores = []
 
-# モデルの評価
-results = {}
-
-for name, model in models.items():
-    train_scores = []
-    test_scores = []
-    
-    for train_index, test_index in tscv.split(X_selected):
-        X_train, X_test = X_selected.iloc[train_index], X_selected.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-        
-        model.fit(X_train, y_train)
-        y_train_pred = model.predict(X_train)
-        y_test_pred = model.predict(X_test)
-        
-        train_scores.append(calculate_metrics(y_train, y_train_pred))
-        test_scores.append(calculate_metrics(y_test, y_test_pred))
-    
-    results[name] = {
-        'train': pd.DataFrame(train_scores).mean(),
-        'test': pd.DataFrame(test_scores).mean()
-    }
-
-# ARIMAモデルの評価
-arima_train_scores = []
-arima_test_scores = []
-
-for train_index, test_index in tscv.split(X_selected):
+for train_index, test_index in tscv.split(X):
+    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
     y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-    
-    model = ARIMA(y_train, order=(1,1,1))
-    fitted_model = model.fit()
-    y_train_pred = fitted_model.fittedvalues
-    y_test_pred = fitted_model.forecast(steps=len(y_test))
-    
-    arima_train_scores.append(calculate_metrics(y_train[1:], y_train_pred[1:]))  # ARIMAは1つ少ないデータポイントを返す
-    arima_test_scores.append(calculate_metrics(y_test, y_test_pred))
 
-results['ARIMA'] = {
-    'train': pd.DataFrame(arima_train_scores).mean(),
-    'test': pd.DataFrame(arima_test_scores).mean()
-}
+    # スケーリング
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    y_train_scaled = scaler.fit_transform(y_train.values.reshape(-1, 1)).flatten()
+    y_test_scaled = scaler.transform(y_test.values.reshape(-1, 1)).flatten()
 
-# 結果の出力を表形式に変換
-train_df = pd.DataFrame({name: results[name]['train'] for name in results})
-test_df = pd.DataFrame({name: results[name]['test'] for name in results})
+    # SARIMAXモデルの訓練
+    sarimax_model = SARIMAX(y_train_scaled, order=sarimax_order, seasonal_order=sarimax_seasonal_order, exog=X_train_scaled)
+    fitted_sarimax = sarimax_model.fit(disp=False)
+
+    # 予測
+    y_pred_train = fitted_sarimax.fittedvalues
+    y_pred_test = fitted_sarimax.forecast(steps=len(y_test_scaled), exog=X_test_scaled)
+
+    # 評価
+    train_scores.append({
+        'R-squared': r2_score(y_train_scaled, y_pred_train),
+        'MSE': mean_squared_error(y_train_scaled, y_pred_train),
+        'RMSE': np.sqrt(mean_squared_error(y_train_scaled, y_pred_train)),
+        'MAE': mean_absolute_error(y_train_scaled, y_pred_train)
+    })
+    test_scores.append({
+        'R-squared': r2_score(y_train_scaled, y_pred_train),
+        'MSE': mean_squared_error(y_test_scaled, y_pred_test),
+        'RMSE': np.sqrt(mean_squared_error(y_test_scaled, y_pred_test)),
+        'MAE': mean_absolute_error(y_test_scaled, y_pred_test)
+    })
+
+# 結果の表示
+train_df = pd.DataFrame(train_scores).mean()
+test_df = pd.DataFrame(test_scores).mean()
+
+print("Train Scores:")
+print(train_df)
+print("\nTest Scores:")
+print(test_df)
 
 # 有効数字5桁にフォーマット
-train_df = train_df.applymap(lambda x: f'{x:.5g}')
-test_df = test_df.applymap(lambda x: f'{x:.5g}')
+train_df = train_df.apply(lambda x: f'{x:.5g}')
+test_df = test_df.apply(lambda x: f'{x:.5g}')
 
 # 表を画像として出力
 fig, axes = plt.subplots(2, 1, figsize=(12, 10))
 
 # Train scores plot
 axes[0].axis('off')
-train_table = axes[0].table(cellText=train_df.values, colLabels=train_df.columns, rowLabels=train_df.index, loc='center')
+train_table = axes[0].table(cellText=[train_df.values], colLabels=train_df.index, loc='center')
 train_table.auto_set_font_size(False)
 train_table.set_fontsize(11)
-
-# タイトルの位置を調整する
-axes[0].set_title('Train Scores', pad=10)
+axes[0].set_title('Train Scores', pad=3, loc='center')
 
 # Test scores plot
 axes[1].axis('off')
-test_table = axes[1].table(cellText=test_df.values, colLabels=test_df.columns, rowLabels=test_df.index, loc='center')
+test_table = axes[1].table(cellText=[test_df.values], colLabels=test_df.index, loc='center')
 test_table.auto_set_font_size(False)
 test_table.set_fontsize(11)
+axes[1].set_title('Test Scores', loc='center')
 
-axes[1].set_title('Test Scores', pad=10)
-
-# 選択された特徴量を表示
-print("特徴量一覧:")
-print(top_features)
-
-# 各モデルの特徴量重要度を表示（ツリーベースのモデルのみ）
-for name in ['Random Forest', 'Gradient Boosting', 'XGBoost', 'LightGBM']:
-    if name in models:
-        importance = pd.DataFrame({
-            'feature': X_selected.columns,
-            'importance': models[name].feature_importances_
-        }).sort_values('importance', ascending=False)
-        print(f'\n{name} 特徴量重要度:')
-        print(importance)
-
-# 距離を調整する
 plt.subplots_adjust(hspace=0.03)
 plt.show()
